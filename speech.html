@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <title>WaveDrop - Sine-Wave Speech</title>
+        <style>
+            * {
+                box-sizing: border-box;
+            }
+            body {
+                margin: 0;
+                font-family: Arial, sans-serif;
+                background: #222;
+                color: #fff;
+                padding-top: 60px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+            /* Uniform Top Bar */
+            #topBar {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 50px;
+                background: #333;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 0 20px;
+                z-index: 100;
+            }
+            #topBar .logo a {
+                color: #fff;
+                text-decoration: none;
+                font-size: 24px;
+                font-weight: bold;
+            }
+            #topBar .navLinks {
+                display: flex;
+                align-items: center;
+            }
+            #topBar .navLinks a {
+                color: #fff;
+                text-decoration: none;
+                margin-left: 20px;
+                font-size: 16px;
+            }
+            #topBar .navLinks a:hover {
+                text-decoration: underline;
+            }
+            button {
+                padding: 10px 20px;
+                font-size: 18px;
+                margin: 10px;
+                cursor: pointer;
+                border: none;
+                background-color: #0a84ff;
+                color: white;
+                border-radius: 5px;
+            }
+            button:hover {
+                background-color: #0077cc;
+            }
+            h1 {
+                margin-top: 20px;
+            }
+        </style>
+    </head>
+    <body>
+        <!-- Uniform Top Bar -->
+        <div id="topBar">
+            <div class="logo"><a href="oscillators.html">WaveDrop</a></div>
+            <div class="navLinks">
+                <a href="oscillators.html">Oscillators</a>
+                <a href="daw.html">DAW Oscilloscope</a>
+                <a href="analyzer.html">Analyzer Visualizer</a>
+                <a href="speech.html">Sine Speech</a>
+            </div>
+        </div>
+        <h1>Sine-Wave Speech: "Hello"</h1>
+        <button id="speakButton">Speak "Hello"</button>
+        <script>
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            function playSyllable(startTime, duration, oscillators) {
+                oscillators.forEach((oscData) => {
+                    const osc = audioCtx.createOscillator();
+                    const gainNode = audioCtx.createGain();
+                    osc.type = "sine";
+                    osc.frequency.setValueAtTime(oscData.freq, startTime);
+                    gainNode.gain.setValueAtTime(0, startTime);
+                    gainNode.gain.linearRampToValueAtTime(oscData.amp, startTime + 0.05);
+                    gainNode.gain.setValueAtTime(oscData.amp, startTime + duration - 0.05);
+                    gainNode.gain.linearRampToValueAtTime(0, startTime + duration);
+                    osc.connect(gainNode);
+                    gainNode.connect(audioCtx.destination);
+                    osc.start(startTime);
+                    osc.stop(startTime + duration);
+                });
+            }
+            function speakHello() {
+                const now = audioCtx.currentTime;
+                const syllableDuration = 0.5;
+                const gap = 0.1;
+                // Syllable 1 ("hel")
+                const syllable1 = [
+                    { freq: 120, amp: 0.3 },
+                    { freq: 500, amp: 0.6 },
+                    { freq: 1500, amp: 0.5 },
+                    { freq: 2500, amp: 0.3 }
+                ];
+                playSyllable(now, syllableDuration, syllable1);
+                // Syllable 2 ("lo")
+                const syllable2 = [
+                    { freq: 120, amp: 0.3 },
+                    { freq: 400, amp: 0.6 },
+                    { freq: 900, amp: 0.5 },
+                    { freq: 2600, amp: 0.3 }
+                ];
+                playSyllable(now + syllableDuration + gap, syllableDuration, syllable2);
+            }
+            const speakButton = document.getElementById("speakButton");
+            speakButton.addEventListener("click", () => {
+                if (audioCtx.state === "suspended") {
+                    audioCtx.resume();
+                }
+                speakHello();
+            });
+        </script>
+    </body>
+</html>

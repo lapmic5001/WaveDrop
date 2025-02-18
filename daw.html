@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>WaveDrop - DAW Oscilloscope</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        background: #222;
+        color: #fff;
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding-top: 60px; /* allow space for fixed top bar */
+        text-align: center;
+      }
+      /* Uniform Top Bar */
+      #topBar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 50px;
+        background: #333;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 20px;
+        z-index: 100;
+      }
+      #topBar .logo a {
+        color: #fff;
+        text-decoration: none;
+        font-size: 24px;
+        font-weight: bold;
+      }
+      #topBar .navLinks {
+        display: flex;
+        align-items: center;
+      }
+      #topBar .navLinks a {
+        color: #fff;
+        text-decoration: none;
+        margin-left: 20px;
+        font-size: 16px;
+      }
+      #topBar .navLinks a:hover {
+        text-decoration: underline;
+      }
+      canvas {
+        border: 1px solid #444;
+        margin: 20px auto;
+        display: block;
+      }
+      .controls {
+        margin: 20px;
+      }
+      label {
+        margin: 0 10px;
+      }
+      input,
+      select {
+        margin: 0 5px;
+        padding: 5px;
+        border-radius: 3px;
+        border: none;
+      }
+      button {
+        padding: 10px 20px;
+        margin: 10px;
+        border: none;
+        background-color: #0a84ff;
+        color: white;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+      button:hover {
+        background-color: #0077cc;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Uniform Top Bar -->
+    <div id="topBar">
+      <div class="logo"><a href="oscillators.html">WaveDrop</a></div>
+      <div class="navLinks">
+        <a href="oscillators.html">Oscillators</a>
+        <a href="daw.html">DAW Oscilloscope</a>
+        <a href="analyzer.html">Analyzer Visualizer</a>
+        <a href="speech.html">Sine Speech</a>
+      </div>
+    </div>
+    <h1>Oscilloscope</h1>
+    <canvas id="oscilloscope" width="800" height="200"></canvas>
+    <div class="controls">
+      <label>
+        Frequency (Hz):
+        <input type="number" id="frequency" value="440" min="20" max="20000" step="1" />
+      </label>
+      <label>
+        Amplitude (0-1):
+        <input type="number" id="amplitude" value="0.5" min="0" max="1" step="0.01" />
+      </label>
+      <label>
+        Wave Type:
+        <select id="waveType">
+          <option value="sine" selected>Sine</option>
+          <option value="square">Square</option>
+          <option value="triangle">Triangle</option>
+          <option value="sawtooth">Sawtooth</option>
+        </select>
+      </label>
+      <br />
+      <button id="start">Start Oscillator</button>
+      <button id="stop">Stop Oscillator</button>
+    </div>
+
+    <script>
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      const audioCtx = new AudioContext();
+      let oscillator = null;
+      let gainNode = null;
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 2048;
+      const bufferLength = analyser.fftSize;
+      const dataArray = new Uint8Array(bufferLength);
+
+      const canvas = document.getElementById("oscilloscope");
+      const ctx = canvas.getContext("2d");
+      const frequencyInput = document.getElementById("frequency");
+      const amplitudeInput = document.getElementById("amplitude");
+      const waveTypeSelect = document.getElementById("waveType");
+      const startButton = document.getElementById("start");
+      const stopButton = document.getElementById("stop");
+
+      function draw() {
+        requestAnimationFrame(draw);
+        analyser.getByteTimeDomainData(dataArray);
+        ctx.fillStyle = "#222";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "#0f0";
+        ctx.beginPath();
+        const sliceWidth = canvas.width / bufferLength;
+        let x = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          const v = dataArray[i] / 128.0;
+          const y = (v * canvas.height) / 2;
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+          x += sliceWidth;
+        }
+        ctx.lineTo(canvas.width, canvas.height / 2);
+        ctx.stroke();
+      }
+      draw();
+
+      function startOscillator() {
+        if (oscillator) return;
+        if (audioCtx.state === "suspended") {
+          audioCtx.resume();
+        }
+        oscillator = audioCtx.createOscillator();
+        gainNode = audioCtx.createGain();
+        oscillator.frequency.value = parseFloat(frequencyInput.value);
+        oscillator.type = waveTypeSelect.value;
+        gainNode.gain.value = parseFloat(amplitudeInput.value);
+        oscillator.connect(gainNode);
+        gainNode.connect(analyser);
+        analyser.connect(audioCtx.destination);
+        oscillator.start();
+      }
+
+      function stopOscillator() {
+        if (oscillator) {
+          oscillator.stop();
+          oscillator.disconnect();
+          gainNode.disconnect();
+          oscillator = null;
+          gainNode = null;
+        }
+      }
+
+      frequencyInput.addEventListener("input", () => {
+        if (oscillator) {
+          oscillator.frequency.value = parseFloat(frequencyInput.value);
+        }
+      });
+
+      amplitudeInput.addEventListener("input", () => {
+        if (gainNode) {
+          gainNode.gain.value = parseFloat(amplitudeInput.value);
+        }
+      });
+
+      waveTypeSelect.addEventListener("change", () => {
+        if (oscillator) {
+          oscillator.type = waveTypeSelect.value;
+        }
+      });
+
+      startButton.addEventListener("click", startOscillator);
+      stopButton.addEventListener("click", stopOscillator);
+    </script>
+  </body>
+</html>

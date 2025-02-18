@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <title>WaveDrop - Oscillators</title>
+        <style>
+            * {
+                box-sizing: border-box;
+            }
+            body {
+                margin: 0;
+                font-family: Arial, sans-serif;
+                background: #222;
+                color: #fff;
+            }
+            /* Uniform Top Bar */
+            #topBar {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 50px;
+                background: #333;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 0 20px;
+                z-index: 100;
+            }
+            #topBar .logo a {
+                color: #fff;
+                text-decoration: none;
+                font-size: 24px;
+                font-weight: bold;
+            }
+            #topBar .navLinks {
+                display: flex;
+                align-items: center;
+            }
+            #topBar .navLinks a {
+                color: #fff;
+                text-decoration: none;
+                margin-left: 20px;
+                font-size: 16px;
+            }
+            #topBar .navLinks a:hover {
+                text-decoration: underline;
+            }
+            /* Add oscillator button (specific to this page) */
+            #addOscillator {
+                margin-top: 70px; /* leave room for top bar */
+                background: green;
+                border: none;
+                color: white;
+                font-size: 24px;
+                width: 40px;
+                height: 40px;
+                border-radius: 50%;
+                cursor: pointer;
+            }
+            /* Container for oscillator panels */
+            #oscillatorContainer {
+                margin-top: 20px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                padding: 10px;
+            }
+            /* Oscillator panel styles */
+            .oscillator-panel {
+                position: relative;
+                border: 1px solid #444;
+                margin: 10px;
+                padding: 10px;
+                border-radius: 5px;
+                background: #333;
+                width: 400px;
+            }
+            .oscillator-panel canvas {
+                border: 1px solid #444;
+                background: #222;
+                display: block;
+                margin: 10px auto;
+            }
+            .controls {
+                margin: 10px;
+            }
+            .controls label {
+                margin: 0 5px;
+            }
+            .controls input,
+            .controls select {
+                margin: 0 5px;
+                padding: 3px;
+                border-radius: 3px;
+                border: none;
+                width: 80px;
+            }
+            .controls button {
+                padding: 5px 10px;
+                margin: 5px;
+                border: none;
+                background-color: #0a84ff;
+                color: white;
+                border-radius: 5px;
+                cursor: pointer;
+            }
+            .controls button:hover {
+                background-color: #0077cc;
+            }
+            /* Red remove ("X") button */
+            .removeOsc {
+                position: absolute;
+                top: 5px;
+                right: 5px;
+                background: red;
+                border: none;
+                color: white;
+                border-radius: 50%;
+                width: 25px;
+                height: 25px;
+                font-size: 16px;
+                cursor: pointer;
+            }
+        </style>
+    </head>
+    <body>
+        <!-- Uniform Top Bar -->
+        <div id="topBar">
+            <div class="logo"><a href="oscillators.html">WaveDrop</a></div>
+            <div class="navLinks">
+                <a href="oscillators.html">Oscillators</a>
+                <a href="daw.html">DAW Oscilloscope</a>
+                <a href="analyzer.html">Analyzer Visualizer</a>
+                <a href="speech.html">Sine Speech</a>
+            </div>
+        </div>
+        <!-- Page-specific button -->
+        <button id="addOscillator">+</button>
+        <div id="oscillatorContainer"></div>
+
+        <script>
+            // Create a single global AudioContext
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            const audioCtx = new AudioContext();
+
+            // Class representing one oscillator panel
+            class OscillatorPanel {
+                constructor(container) {
+                    this.container = container;
+                    this.oscillator = null;
+                    this.gainNode = null;
+                    this.analyser = audioCtx.createAnalyser();
+                    this.analyser.fftSize = 2048;
+                    this.bufferLength = this.analyser.fftSize;
+                    this.dataArray = new Uint8Array(this.bufferLength);
+
+                    // Create panel element
+                    this.panelEl = document.createElement("div");
+                    this.panelEl.className = "oscillator-panel";
+
+                    // Create remove button
+                    this.removeButton = document.createElement("button");
+                    this.removeButton.innerText = "X";
+                    this.removeButton.className = "removeOsc";
+                    this.panelEl.appendChild(this.removeButton);
+
+                    // Create canvas for oscilloscope
+                    this.canvas = document.createElement("canvas");
+                    this.canvas.width = 350;
+                    this.canvas.height = 100;
+                    this.ctx = this.canvas.getContext("2d");
+
+                    // Create controls container
+                    const controlsDiv = document.createElement("div");
+                    controlsDiv.className = "controls";
+
+                    // Frequency control
+                    this.freqLabel = document.createElement("label");
+                    this.freqLabel.innerText = "Frequency (Hz):";
+                    this.freqInput = document.createElement("input");
+                    this.freqInput.type = "number";
+                    this.freqInput.value = 440;
+                    this.freqInput.min = 20;
+                    this.freqInput.max = 20000;
+                    this.freqInput.step = 1;
+
+                    // Amplitude control
+                    this.ampLabel = document.createElement("label");
+                    this.ampLabel.innerText = "Amplitude (0-1):";
+                    this.ampInput = document.createElement("input");
+                    this.ampInput.type = "number";
+                    this.ampInput.value = 0.5;
+                    this.ampInput.min = 0;
+                    this.ampInput.max = 1;
+                    this.ampInput.step = 0.01;
+
+                    // Wave type selection
+                    this.waveLabel = document.createElement("label");
+                    this.waveLabel.innerText = "Wave Type:";
+                    this.waveSelect = document.createElement("select");
+                    ["sine", "square", "triangle", "sawtooth"].forEach((type) => {
+                        const option = document.createElement("option");
+                        option.value = type;
+                        option.innerText = type.charAt(0).toUpperCase() + type.slice(1);
+                        this.waveSelect.appendChild(option);
+                    });
+
+                    // Start and Stop buttons
+                    this.startButton = document.createElement("button");
+                    this.startButton.innerText = "Start";
+                    this.stopButton = document.createElement("button");
+                    this.stopButton.innerText = "Stop";
+
+                    // Append controls to the controlsDiv
+                    controlsDiv.appendChild(this.freqLabel);
+                    controlsDiv.appendChild(this.freqInput);
+                    controlsDiv.appendChild(this.ampLabel);
+                    controlsDiv.appendChild(this.ampInput);
+                    controlsDiv.appendChild(this.waveLabel);
+                    controlsDiv.appendChild(this.waveSelect);
+                    controlsDiv.appendChild(document.createElement("br"));
+                    controlsDiv.appendChild(this.startButton);
+                    controlsDiv.appendChild(this.stopButton);
+
+                    // Append canvas and controls to the panel element
+                    this.panelEl.appendChild(this.canvas);
+                    this.panelEl.appendChild(controlsDiv);
+
+                    // Append panel to container
+                    container.appendChild(this.panelEl);
+
+                    // Event Listeners for controls
+                    this.startButton.addEventListener("click", () => this.startOscillator());
+                    this.stopButton.addEventListener("click", () => this.stopOscillator());
+                    this.freqInput.addEventListener("input", () => this.updateFrequency());
+                    this.ampInput.addEventListener("input", () => this.updateAmplitude());
+                    this.waveSelect.addEventListener("change", () => this.updateWaveType());
+                    this.removeButton.addEventListener("click", () => this.removePanel());
+
+                    // Start the animation loop for the oscilloscope
+                    this.draw();
+                }
+
+                startOscillator() {
+                    if (this.oscillator) return; // Prevent multiple instances
+                    if (audioCtx.state === "suspended") {
+                        audioCtx.resume();
+                    }
+                    this.oscillator = audioCtx.createOscillator();
+                    this.gainNode = audioCtx.createGain();
+                    this.oscillator.frequency.value = parseFloat(this.freqInput.value);
+                    this.oscillator.type = this.waveSelect.value;
+                    this.gainNode.gain.value = parseFloat(this.ampInput.value);
+                    this.oscillator.connect(this.gainNode);
+                    this.gainNode.connect(this.analyser);
+                    this.analyser.connect(audioCtx.destination);
+                    this.oscillator.start();
+                }
+
+                stopOscillator() {
+                    if (this.oscillator) {
+                        this.oscillator.stop();
+                        this.oscillator.disconnect();
+                        this.gainNode.disconnect();
+                        this.oscillator = null;
+                        this.gainNode = null;
+                    }
+                }
+
+                updateFrequency() {
+                    if (this.oscillator) {
+                        this.oscillator.frequency.value = parseFloat(this.freqInput.value);
+                    }
+                }
+
+                updateAmplitude() {
+                    if (this.gainNode) {
+                        this.gainNode.gain.value = parseFloat(this.ampInput.value);
+                    }
+                }
+
+                updateWaveType() {
+                    if (this.oscillator) {
+                        this.oscillator.type = this.waveSelect.value;
+                    }
+                }
+
+                removePanel() {
+                    this.stopOscillator();
+                    this.container.removeChild(this.panelEl);
+                }
+
+                draw() {
+                    requestAnimationFrame(() => this.draw());
+                    this.analyser.getByteTimeDomainData(this.dataArray);
+                    const width = this.canvas.width;
+                    const height = this.canvas.height;
+                    this.ctx.fillStyle = "#222";
+                    this.ctx.fillRect(0, 0, width, height);
+                    this.ctx.lineWidth = 2;
+                    this.ctx.strokeStyle = "#0f0";
+                    this.ctx.beginPath();
+                    const sliceWidth = width / this.bufferLength;
+                    let x = 0;
+                    for (let i = 0; i < this.bufferLength; i++) {
+                        const v = this.dataArray[i] / 128.0;
+                        const y = (v * height) / 2;
+                        if (i === 0) {
+                            this.ctx.moveTo(x, y);
+                        } else {
+                            this.ctx.lineTo(x, y);
+                        }
+                        x += sliceWidth;
+                    }
+                    this.ctx.lineTo(width, height / 2);
+                    this.ctx.stroke();
+                }
+            }
+
+            const addOscButton = document.getElementById("addOscillator");
+            const oscillatorContainer = document.getElementById("oscillatorContainer");
+
+            addOscButton.addEventListener("click", () => {
+                new OscillatorPanel(oscillatorContainer);
+            });
+        </script>
+    </body>
+</html>
