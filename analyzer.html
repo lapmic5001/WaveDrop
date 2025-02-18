@@ -100,12 +100,15 @@
                     this.createUI();
                     this.animateAnalyzer();
                 }
+
                 createUI() {
                     this.textInput = document.createElement("textarea");
                     this.textInput.placeholder =
                         "Enter note data (commands can be in-line):\n" +
                         "Example:\nT120 TS4 4 {262, 1-1.5, sine, 0.8} {330, 1-1.5, sine}\n" +
-                        "Note: amplitude is optional (default 1.0)";
+                        "For noise events, use 'noise' as the waveform. The frequency value will act as the noise’s pitch (update rate).\n" +
+                        "Example for noise:\nT120 TS4 4 {0, 1-1.5, noise, 0.8}\n" +
+                        "Note: For noise, the frequency is used to control the update rate of the pseudo-noise.";
                     this.playButton = document.createElement("button");
                     this.playButton.innerText = "Play";
                     this.playButton.addEventListener("click", () => this.playSequence());
@@ -117,6 +120,7 @@
                     this.container.appendChild(this.playButton);
                     this.container.appendChild(this.canvas);
                 }
+
                 parseInput(input) {
                     const tempoMatch = input.match(/T(\d+)/i);
                     if (tempoMatch) {
@@ -140,6 +144,40 @@
                     }
                     return events;
                 }
+
+                // New helper: Generate a noise buffer using a 15-bit LFSR.
+                // The "pitch" parameter (in Hz) determines the update rate of the LFSR.
+                generateNoiseBufferWithPitch(duration, pitch) {
+                    const sampleRate = this.audioCtx.sampleRate;
+                    const length = Math.floor(sampleRate * duration);
+                    const buffer = this.audioCtx.createBuffer(1, length, sampleRate);
+                    const data = buffer.getChannelData(0);
+
+                    let lfsr = 1; // 15-bit LFSR starting value (must be non-zero)
+                    let phase = 0;
+                    // The phaseIncrement determines how frequently the LFSR updates.
+                    // A higher pitch value means more updates per second.
+                    const phaseIncrement = pitch / sampleRate;
+
+                    for (let i = 0; i < length; i++) {
+                        phase += phaseIncrement;
+                        if (phase >= 1) {
+                            // Update the LFSR.
+                            // For a 15-bit LFSR similar to the NES, XOR bit0 and bit1.
+                            const bit0 = lfsr & 1;
+                            const bit1 = (lfsr >> 1) & 1;
+                            const newBit = bit0 ^ bit1;
+                            // Shift right and insert the new bit in the top position (bit 14).
+                            lfsr = (lfsr >> 1) | (newBit << 14);
+                            phase -= 1;
+                        }
+                        // Output a value based on the least-significant bit.
+                        // Mapping: 0 -> -1, 1 -> 1.
+                        data[i] = lfsr & 1 ? 1 : -1;
+                    }
+                    return buffer;
+                }
+
                 playSequence() {
                     if (this.audioCtx.state === "suspended") {
                         this.audioCtx.resume();
@@ -152,19 +190,38 @@
                     const beatDuration = 60 / this.tempo;
                     events.forEach((event) => {
                         const { frequency, start, end, waveform, amplitude } = event;
-                        const osc = this.audioCtx.createOscillator();
-                        const gainNode = this.audioCtx.createGain();
-                        osc.type = waveform;
-                        osc.frequency.value = frequency;
-                        gainNode.gain.value = amplitude;
-                        osc.connect(gainNode);
-                        gainNode.connect(this.masterGain);
                         const startTime = this.audioCtx.currentTime + start * beatDuration;
                         const endTime = this.audioCtx.currentTime + end * beatDuration;
-                        osc.start(startTime);
-                        osc.stop(endTime);
+                        const duration = endTime - startTime;
+
+                        if (waveform === "noise") {
+                            // Use our LFSR-based noise generator.
+                            // Here, the "frequency" parameter controls the LFSR update rate,
+                            // which in turn gives the noise a more tonal (or drum/crash-like) character.
+                            const noiseBuffer = this.generateNoiseBufferWithPitch(duration, frequency);
+                            const noiseSource = this.audioCtx.createBufferSource();
+                            noiseSource.buffer = noiseBuffer;
+                            const gainNode = this.audioCtx.createGain();
+                            gainNode.gain.value = amplitude;
+                            noiseSource.connect(gainNode);
+                            gainNode.connect(this.masterGain);
+                            noiseSource.start(startTime);
+                            noiseSource.stop(endTime);
+                        } else {
+                            // Regular oscillator for other waveforms.
+                            const osc = this.audioCtx.createOscillator();
+                            osc.type = waveform;
+                            osc.frequency.value = frequency;
+                            const gainNode = this.audioCtx.createGain();
+                            gainNode.gain.value = amplitude;
+                            osc.connect(gainNode);
+                            gainNode.connect(this.masterGain);
+                            osc.start(startTime);
+                            osc.stop(endTime);
+                        }
                     });
                 }
+
                 animateAnalyzer() {
                     requestAnimationFrame(() => this.animateAnalyzer());
                     this.analyser.getByteTimeDomainData(this.dataArray);
@@ -189,6 +246,7 @@
                     this.ctx.stroke();
                 }
             }
+
             const container = document.getElementById("oscillatorContainer");
             new TextBasedSynth(container);
         </script>
